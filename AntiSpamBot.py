@@ -6,6 +6,9 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
+# Замена для imghdr в Python 3.13+
+import mimetypes
+
 # Загружаем переменные из .env файла
 load_dotenv()
 
