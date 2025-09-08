@@ -2,6 +2,7 @@ services:
   - type: web
     name: anti-spam-bot
     env: python
+    pythonVersion: "3.11.8"  # Явное указание версии
     buildCommand: pip install -r requirements.txt
     startCommand: python AntiSpamBot.py
     envVars:
