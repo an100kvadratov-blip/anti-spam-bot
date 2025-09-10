@@ -25,6 +25,9 @@ if not BOT_TOKEN:
     logger.error("BOT_TOKEN environment variable is not set!")
     raise ValueError("BOT_TOKEN environment variable is not set!")
 
+# ID владельца (замените на ваш реальный ID)
+OWNER_IDS = [1263482853]  # ⚠️ ЗАМЕНИТЕ НА ВАШ REAL ID!
+
 # Чёрный список слов и паттернов для фильтрации спама
 SPAM_PATTERNS = [
     # Ссылки и домены
@@ -189,6 +192,29 @@ class AntiSpamBot:
         user_join_times[(chat_id, user_id)] = datetime.now()
         logger.info(f"User {user_id} joined chat {chat_id}")
 
+    async def is_admin_or_owner(self, message: Update.message, context: ContextTypes.DEFAULT_TYPE) -> bool:
+        """Проверяет, является ли пользователь администратором или владельцем"""
+        try:
+            chat_id = message.chat.id
+            user_id = message.from_user.id
+
+            # Проверяем по ID владельца
+            if user_id in OWNER_IDS:
+                logger.info(f"👑 Сообщение от владельца: {message.from_user.first_name}")
+                return True
+
+            # Проверяем права администратора в чате
+            chat_member = await context.bot.get_chat_member(chat_id, user_id)
+
+            if chat_member.status in ['creator', 'administrator']:
+                logger.info(f"👑 Сообщение от администратора: {message.from_user.first_name}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Ошибка проверки прав: {e}")
+
+        return False
+
 
 # Создаем экземпляр бота
 antispam_bot = AntiSpamBot()
@@ -209,6 +235,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in start command: {e}")
 
 
+async def myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показывает ID пользователя"""
+    try:
+        user_id = update.message.from_user.id
+        await update.message.reply_text(f"🆔 Ваш ID: `{user_id}`", parse_mode='Markdown')
+        logger.info(f"User {user_id} requested their ID")
+    except Exception as e:
+        logger.error(f"Error in myid command: {e}")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик всех сообщений"""
     try:
@@ -220,15 +256,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = message.from_user.id
         text = message.text or message.caption or ""
 
+        # Пропускаем сообщения от ботов
+        if message.from_user.is_bot:
+            return
+
+        # Пропускаем сообщения от администраторов и владельца
+        if await antispam_bot.is_admin_or_owner(message, context):
+            logger.info(f"⚠️ Пропущено сообщение от администратора/владельца: {user_id}")
+            return
+
         # ДЛЯ ОТЛАДКИ
         print(f"Получено сообщение: '{text}'")
         print(f"Спам? {antispam_bot.is_spam(text)}")
 
-        # Пропускаем сообщения от администраторов и ботов
-        if message.from_user.is_bot:
-            return
-
-        # ПРОВЕРЯЕМ НА СПАМ (БЕЗ ПРОВЕРКИ НА НОВОГО ПОЛЬЗОВАТЕЛЯ)
+        # ПРОВЕРЯЕМ НА СПАМ
         if antispam_bot.is_spam(text):
             print("Удаляем спам!")  # ДЛЯ ОТЛАДКИ
             try:
@@ -272,6 +313,7 @@ def main():
 
         # Добавляем обработчики
         application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("myid", myid))  # Новая команда
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.CAPTION, handle_message))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
@@ -284,6 +326,7 @@ def main():
         print("🤖 Антиспам-бот запущен!")
         print("📍 Токен:", BOT_TOKEN[:10] + "..." if BOT_TOKEN else "Not set")
         print("⏰ Время проверки новых пользователей:", NEW_USER_TIME)
+        print("👑 ID владельца:", OWNER_IDS)
 
         application.run_polling(
             drop_pending_updates=True,
