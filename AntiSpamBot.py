@@ -58,10 +58,6 @@ if not BOT_TOKEN:
 # ID владельца (замените на ваш реальный ID)
 OWNER_IDS = [1263482853]  # ⚠️ ЗАМЕНИТЕ НА ВАШ REAL ID!
 
-# ⭐⭐ ID канала, сообщения от которого не нужно удалять ⭐⭐
-CHANNEL_ID = -1002207248459
-
-
 # Чёрный список слов и паттернов для фильтрации спама
 SPAM_PATTERNS = [
     # Ссылки и домены
@@ -294,18 +290,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message.from_user.is_bot:
             return
 
-        # ⭐⭐ НОВОЕ: Пропускаем пересланные сообщения из КОНКРЕТНОГО КАНАЛА ⭐⭐
-        CHANNEL_ID = -1002207248459  # ID вашего канала
-        if (message.forward_from_chat and
-            message.forward_from_chat.id == CHANNEL_ID):
-            logger.info(f"📢 Пропущено пересланное сообщение из канала {CHANNEL_ID}")
-            return
-
-        # ⭐⭐ ИЛИ: Пропускаем сообщения от самого канала (если он пишет напрямую) ⭐⭐
-        if user_id == CHANNEL_ID:
-            logger.info(f"📢 Пропущено прямое сообщение от канала {CHANNEL_ID}")
-            return
-
         # Пропускаем сообщения от администраторов и владельца
         if await antispam_bot.is_admin_or_owner(message, context):
             logger.info(f"⚠️ Пропущено сообщение от администратора/владельца: {user_id}")
@@ -329,6 +313,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"Error in handle_message: {e}")
+
+
+async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик новых участников"""
+    try:
+        chat_id = update.message.chat_id
+
+        for member in update.message.new_chat_members:
+            if not member.is_bot:  # Не отслеживаем ботов
+                await antispam_bot.track_user_join(chat_id, member.id)
+
+        logger.info(f"New members joined chat {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in handle_new_members: {e}")
+
+
+async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработчик ошибок"""
+    logger.error(f"Exception while handling an update: {context.error}")
+
+
+def main():
+    """Основная функция запуска бота"""
+    try:
+        # Создаем приложение
+        application = Application.builder().token(BOT_TOKEN).build()
+
+        # Добавляем обработчики
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("myid", myid))  # Новая команда
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        application.add_handler(MessageHandler(filters.CAPTION, handle_message))
+        application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
+
+        # Обработчик ошибок
+        application.add_error_handler(error_handler)
+
+        # Запускаем бота
+        logger.info("Бот запускается...")
+        print("🤖 Антиспам-бот запущен!")
+        print("📍 Токен:", BOT_TOKEN[:10] + "..." if BOT_TOKEN else "Not set")
+        print("⏰ Время проверки новых пользователей:", NEW_USER_TIME)
+        print("👑 ID владельца:", OWNER_IDS)
+
+        application.run_polling(
+            drop_pending_updates=True,
+            allowed_updates=Update.ALL_TYPES
+        )
+
+    except Exception as e:
+        logger.critical(f"Failed to start bot: {e}")
         raise
 
 
