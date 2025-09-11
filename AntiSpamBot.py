@@ -187,10 +187,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message.from_user.is_bot:
             return
 
-        # Пропускаем пересланные сообщения из канала
-        if message.forward_from_chat and message.forward_from_chat.id == CHANNEL_ID:
-            logger.info(f"📢 Пропущено пересланное сообщение из канала {CHANNEL_ID}")
-            return
+        # ⭐ ИСПРАВЛЕНИЕ: Безопасная проверка пересланных сообщений ⭐
+        if hasattr(message, 'forward_from_chat') and message.forward_from_chat:
+            if message.forward_from_chat.id == CHANNEL_ID:
+                logger.info(f"📢 Пропущено пересланное сообщение из канала {CHANNEL_ID}")
+                return
 
         # Пропускаем сообщения от самого канала
         if user_id == CHANNEL_ID:
