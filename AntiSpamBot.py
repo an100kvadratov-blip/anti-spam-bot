@@ -1,45 +1,52 @@
 import os
 import re
 import logging
+import threading
+import time
 from datetime import datetime, timedelta
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-import os
-import re
-import logging
-from datetime import datetime, timedelta
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-from dotenv import load_dotenv
+
 
 # === HEALTH CHECK СЕРВЕР ДЛЯ KOYEB === #
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b'OK')
 
-def run_health_server():
-    server = HTTPServer(('0.0.0.0', 8000), HealthHandler)
-    print("🌐 Health server запущен на 0.0.0.0:8000")
-    server.serve_forever()
+    def log_message(self, format, *args):
+        # Отключаем логирование health check запросов
+        return
 
-# Запускаем только в веб-среде
+
+def run_health_server():
+    """Запуск health check сервера в отдельном потоке"""
+    try:
+        server = HTTPServer(('0.0.0.0', 8000), HealthHandler)
+        print("🌐 Health server запущен на 0.0.0.0:8000")
+        server.timeout = 1  # Таймаут для частой проверки выхода
+        while True:
+            server.handle_request()
+            time.sleep(1)
+    except Exception as e:
+        print(f"❌ Ошибка health server: {e}")
+
+
+# Запускаем health server только в веб-среде
 if os.environ.get('KOYEB') or os.environ.get('WEB_ENV'):
-    health_thread = threading.Thread(target=run_health_server, daemon=True)
-    health_thread.start()
+    try:
+        health_thread = threading.Thread(target=run_health_server, daemon=True)
+        health_thread.start()
+        print("✅ Health server запущен в фоновом режиме")
+    except Exception as e:
+        print(f"❌ Не удалось запустить health server: {e}")
+
 # === КОНЕЦ HEALTH CHECK СЕРВЕРА === #
 
 # Загрузка переменных из .env файла
-load_dotenv()
-# Замена для imghdr в Python 3.13+
-import mimetypes
-
-# Загружаем переменные из .env файла
 load_dotenv()
 
 # Настройка логирования
@@ -55,127 +62,26 @@ if not BOT_TOKEN:
     logger.error("BOT_TOKEN environment variable is not set!")
     raise ValueError("BOT_TOKEN environment variable is not set!")
 
-# ID владельца (замените на ваш реальный ID)
-OWNER_IDS = [1263482853]  # ⚠️ ЗАМЕНИТЕ НА ВАШ REAL ID!
+# ID владельца
+OWNER_IDS = [1263482853]
+
+# ID канала, сообщения от которого не нужно удалять
+CHANNEL_ID = -1002207248459
 
 # Чёрный список слов и паттернов для фильтрации спама
 SPAM_PATTERNS = [
-    # Ссылки и домены
-    r"https?://",
-    r"www\.",
-    r"\.(com|ru|org|net|info|bot|me|xyz|shop|online)/?",
-    r"t\.me/",
-    r"@[a-zA-Z0-9_]{5,}",
-
-    # Работа и заработок
-    r"подработк",
-    r"заработок",
-    r"заработать",
-    r"ваканси",
-    r"работ[аыу]",
-    r"работать",
-    r"зарплата",
-    r"доход",
-    r"карьер",
-
-    # Призывы к действию
-    r"пиши\s*(в?\s*(лс|личку|личные|пм|pm|dm))",
-    r"обращайся",
-    r"обратитесь",
-    r"напиши",
-    r"напишите",
-    r"свяжись",
-    r"свяжитесь",
-    r"звони",
-    r"звоните",
-    r"звонок",
-
-    # Финансовые схемы
-    r"инвест",
-    r"бизнес",
-    r"партнер",
-    r"франшиз",
-    r"крипт",
-    r"биткоин",
-    r"bitcoin",
-    r"блокчейн",
-
-    # Быстрый заработок
-    r"быстры[ей]? деньги",
-    r"легк[аои]? заработок",
-    r"на дому",
-    r"удаленн",
-    r"удалённ",
-    r"онлайн",
-
-    # Набор сотрудников
-    r"набор.*(сотрудник|персонал|работник)",
-    r"требуются",
-    r"требуется",
-    r"ищем.*(сотрудник|работник)",
-
-    # Контакты
-    r"\+?\d{10,}",  # телефоны
-    r"@\w{5,}",  # упоминания
-    r"контакт",
-    r"телефон",
-    r"whatsapp",
-    r"вайбер",
-    r"viber",
-    r"telegram",
-
-    # Подозрительные предложения
-    r"бесплатно",
-    r"бонус",
-    r"акци",
-    r"скидк",
-    r"выгодн",
-    r"предложен",
-
-    # Сетевой маркетинг
-    r"млм",
-    r"сетевой",
-    r"маркетинг",
-
-    # Деньги и суммы
-    r"8000",
-    r"8\s*000",  # 8 000
-    r"8,000",
-    r"8к",
-    r"8\s*[кk]",
-    r"8\s*тыс",
-    r"на\s+руки",  # "на руки"
-    r"заработок",
-    r"заработок",  # с опечаткой
-    r"деньги",
-    r"выплат",
-    r"получаешь",
-
-    # Время и простота
-    r"за\s*4\s*час",  # за 4 час(а)
-    r"за\s*четыре\s*час",
-    r"несколько\s*дней",
-    r"на\s+несколько\s+дней",
-    r"простой",
-    r"простая",
-    r"проще\s+простого",
-    r"легк",
-    r"быстр",
-    r"за\s*день",
-
-    # Поиск людей
-    r"нужны\s+люди",
-    r"требуются",
-    r"ищем",
-    r"для\s+работы",
-    r"удаленн",  # удаленно, удаленная
-    r"удаленк",
-
-    # Прочее
-    r"подработк",
-    r"без\s+вложений",
-    r"без\s+опыта",
-    r"в\s+свободное\s+время",
+    r"https?://", r"www\.", r"\.(com|ru|org|net|info|bot|me)/?", r"t\.me/", r"@[a-zA-Z0-9_]{5,}",
+    r"подработк", r"заработок", r"заработать", r"ваканси", r"работ[аыу]", r"работать",
+    r"пиши\s*(в?\s*(лс|личку|личные|пм|pm|dm))", r"обращайся", r"напиши", r"свяжись",
+    r"инвест", r"бизнес", r"партнер", r"франшиз", r"крипт", r"биткоин",
+    r"быстры[ей]? деньги", r"легк[аои]? заработок", r"на дому", r"удаленн", r"удалённ",
+    r"набор.*(сотрудник|персонал|работник)", r"требуются", r"требуется",
+    r"\+?\d{10,}", r"@\w{5,}", r"контакт", r"телефон", r"whatsapp", r"вайбер",
+    r"бесплатно", r"бонус", r"акци", r"скидк", r"выгодн", r"предложен",
+    r"млм", r"сетевой", r"маркетинг", r"8000", r"8\s*000", r"8к", r"8\s*[кk]",
+    r"деньги", r"выплат", r"получаешь", r"за\s*4\s*час", r"несколько\s*дней",
+    r"нужны\s+люди", r"требуются", r"ищем", r"для\s+работы", r"удаленн",
+    r"подработк", r"без\s+вложений", r"без\s+опыта", r"в\s+свободное\s+время"
 ]
 
 # Время в течение которого пользователь считается новым (24 часа)
@@ -195,14 +101,12 @@ class AntiSpamBot:
             return False
 
         text_lower = text.lower()
-
-        # Быстрая проверка по ключевым словам
         spam_keywords = ["http", "www", ".com", ".ru", ".org", "@", "t.me", "подработ", "заработ", "+ лс", "пиши",
                          "набор"]
+
         if any(keyword in text_lower for keyword in spam_keywords):
             return True
 
-        # Глубокая проверка по regex паттернам
         for pattern in self.compiled_patterns:
             if pattern.search(text):
                 return True
@@ -214,7 +118,6 @@ class AntiSpamBot:
         join_time = user_join_times.get((chat_id, user_id))
         if not join_time:
             return False
-
         return datetime.now() - join_time < NEW_USER_TIME
 
     async def track_user_join(self, chat_id: int, user_id: int):
@@ -222,27 +125,22 @@ class AntiSpamBot:
         user_join_times[(chat_id, user_id)] = datetime.now()
         logger.info(f"User {user_id} joined chat {chat_id}")
 
-    async def is_admin_or_owner(self, message: Update.message, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    async def is_admin_or_owner(self, message, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Проверяет, является ли пользователь администратором или владельцем"""
         try:
-            chat_id = message.chat.id
             user_id = message.from_user.id
 
-            # Проверяем по ID владельца
             if user_id in OWNER_IDS:
                 logger.info(f"👑 Сообщение от владельца: {message.from_user.first_name}")
                 return True
 
-            # Проверяем права администратора в чате
-            chat_member = await context.bot.get_chat_member(chat_id, user_id)
-
+            chat_member = await context.bot.get_chat_member(message.chat.id, user_id)
             if chat_member.status in ['creator', 'administrator']:
                 logger.info(f"👑 Сообщение от администратора: {message.from_user.first_name}")
                 return True
 
         except Exception as e:
             logger.error(f"Ошибка проверки прав: {e}")
-
         return False
 
 
@@ -256,8 +154,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🚫 Антиспам-бот активирован!\n\n"
             "Добавьте меня в группу как администратора с правами:\n"
-            "• Удаление сообщений\n"
-            "• Блокировка пользователей\n\n"
+            "• Удаление сообщений\n• Блокировка пользователей\n\n"
             "Я буду автоматически удалять спам!"
         )
         logger.info("Start command received")
@@ -290,25 +187,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if message.from_user.is_bot:
             return
 
+        # Пропускаем пересланные сообщения из канала
+        if message.forward_from_chat and message.forward_from_chat.id == CHANNEL_ID:
+            logger.info(f"📢 Пропущено пересланное сообщение из канала {CHANNEL_ID}")
+            return
+
+        # Пропускаем сообщения от самого канала
+        if user_id == CHANNEL_ID:
+            logger.info(f"📢 Пропущено прямое сообщение от канала {CHANNEL_ID}")
+            return
+
         # Пропускаем сообщения от администраторов и владельца
         if await antispam_bot.is_admin_or_owner(message, context):
             logger.info(f"⚠️ Пропущено сообщение от администратора/владельца: {user_id}")
             return
 
-        # ДЛЯ ОТЛАДКИ
-        print(f"Получено сообщение: '{text}'")
-        print(f"Спам? {antispam_bot.is_spam(text)}")
-
-        # ПРОВЕРЯЕМ НА СПАМ
+        # Проверяем на спам
         if antispam_bot.is_spam(text):
-            print("Удаляем спам!")  # ДЛЯ ОТЛАДКИ
             try:
-                # Удаляем сообщение
                 await message.delete()
                 logger.info(f"Deleted spam message from user {user_id} in chat {chat_id}")
-
             except Exception as e:
-                print(f"Ошибка удаления: {e}")  # ДЛЯ ОТЛАДКИ
                 logger.error(f"Failed to delete message: {e}")
 
     except Exception as e:
@@ -319,13 +218,10 @@ async def handle_new_members(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Обработчик новых участников"""
     try:
         chat_id = update.message.chat_id
-
         for member in update.message.new_chat_members:
-            if not member.is_bot:  # Не отслеживаем ботов
+            if not member.is_bot:
                 await antispam_bot.track_user_join(chat_id, member.id)
-
         logger.info(f"New members joined chat {chat_id}")
-
     except Exception as e:
         logger.error(f"Error in handle_new_members: {e}")
 
@@ -338,30 +234,22 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     """Основная функция запуска бота"""
     try:
-        # Создаем приложение
         application = Application.builder().token(BOT_TOKEN).build()
 
-        # Добавляем обработчики
         application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("myid", myid))  # Новая команда
+        application.add_handler(CommandHandler("myid", myid))
         application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         application.add_handler(MessageHandler(filters.CAPTION, handle_message))
         application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_members))
-
-        # Обработчик ошибок
         application.add_error_handler(error_handler)
 
-        # Запускаем бота
         logger.info("Бот запускается...")
         print("🤖 Антиспам-бот запущен!")
         print("📍 Токен:", BOT_TOKEN[:10] + "..." if BOT_TOKEN else "Not set")
-        print("⏰ Время проверки новых пользователей:", NEW_USER_TIME)
         print("👑 ID владельца:", OWNER_IDS)
+        print("📢 Разрешенный канал:", CHANNEL_ID)
 
-        application.run_polling(
-            drop_pending_updates=True,
-            allowed_updates=Update.ALL_TYPES
-        )
+        application.run_polling(drop_pending_updates=True)
 
     except Exception as e:
         logger.critical(f"Failed to start bot: {e}")
