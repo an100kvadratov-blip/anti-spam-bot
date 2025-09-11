@@ -5,7 +5,37 @@ from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
+import os
+import re
+import logging
+from datetime import datetime, timedelta
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from dotenv import load_dotenv
 
+# === HEALTH CHECK СЕРВЕР ДЛЯ KOYEB === #
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'OK')
+
+def run_health_server():
+    server = HTTPServer(('0.0.0.0', 8000), HealthHandler)
+    print("🌐 Health server запущен на 0.0.0.0:8000")
+    server.serve_forever()
+
+# Запускаем только в веб-среде
+if os.environ.get('KOYEB') or os.environ.get('WEB_ENV'):
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
+    health_thread.start()
+# === КОНЕЦ HEALTH CHECK СЕРВЕРА === #
+
+# Загрузка переменных из .env файла
+load_dotenv()
 # Замена для imghdr в Python 3.13+
 import mimetypes
 
